@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*) FROM credentials c\n        JOIN participants p ON c.participant_id = p.id\n        WHERE p.participant_type_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "828ba00079d9f25b35f480a92351d15ddf3e2e1eae4288cb1ff67e321d8e3f90"
+}

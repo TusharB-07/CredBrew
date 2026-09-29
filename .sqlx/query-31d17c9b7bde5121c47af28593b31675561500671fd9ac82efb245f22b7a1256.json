@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO participant_types (event_id, name, badge_enabled, certificate_enabled)\n            VALUES ($1, $2, $3, $4)\n            ON CONFLICT (event_id, name) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "31d17c9b7bde5121c47af28593b31675561500671fd9ac82efb245f22b7a1256"
+}

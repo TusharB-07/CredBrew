@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*) FROM credentials\n        WHERE participant_id = $1 AND status IN ('emailed', 'revoked')\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "f20ef78a0c5ecdd8daa845eeab584c3977f7c4eb2b373d77219f8c1e5c4edca3"
+}

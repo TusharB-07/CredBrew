@@ -1,0 +1,226 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            c.id, c.participant_id, c.template_id, c.kind as \"kind: TemplateKind\", c.file_key,\n            c.status as \"status: CredentialStatus\", c.attempts, c.last_error, c.issued_at, c.updated_at,\n            p.id as p_id, p.event_id, p.participant_type_id, p.name as p_name, p.email, p.short_code, p.created_at as p_created_at,\n            pt.id as pt_id, pt.event_id as pt_event_id, pt.name as pt_name, pt.badge_enabled, pt.certificate_enabled,\n            e.id as e_id, e.owner_id, e.name as e_name, e.event_date, e.org_name, e.accent_color, e.created_at as e_created_at,\n            t.id as t_id, t.participant_type_id as t_pt_id, t.kind as \"t_kind: TemplateKind\", t.file_key as t_file_key, t.name_zone, t.qr_zone\n        FROM credentials c\n        JOIN participants p ON c.participant_id = p.id\n        JOIN participant_types pt ON p.participant_type_id = pt.id\n        JOIN events e ON p.event_id = e.id\n        JOIN templates t ON c.template_id = t.id\n        WHERE c.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "participant_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "template_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "kind: TemplateKind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "file_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "status: CredentialStatus",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "attempts",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "last_error",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "issued_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "p_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 11,
+        "name": "event_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 12,
+        "name": "participant_type_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 13,
+        "name": "p_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "email",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "short_code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
+        "name": "p_created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "pt_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 18,
+        "name": "pt_event_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 19,
+        "name": "pt_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 20,
+        "name": "badge_enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 21,
+        "name": "certificate_enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 22,
+        "name": "e_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 23,
+        "name": "owner_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 24,
+        "name": "e_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 25,
+        "name": "event_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 26,
+        "name": "org_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 27,
+        "name": "accent_color",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 28,
+        "name": "e_created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 29,
+        "name": "t_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 30,
+        "name": "t_pt_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 31,
+        "name": "t_kind: TemplateKind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 32,
+        "name": "t_file_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 33,
+        "name": "name_zone",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 34,
+        "name": "qr_zone",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "722f6e3b5f617b8569e4c5abf7a4754be730225debd64fd37a368d0ade42aa8b"
+}

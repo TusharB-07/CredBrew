@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, participant_type_id, kind as \"kind: TemplateKind\", file_key, name_zone, qr_zone\n        FROM templates\n        WHERE file_key = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "participant_type_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "kind: TemplateKind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "file_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "name_zone",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "qr_zone",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "9291053d8690bbed90244a37da9550ad1340c1bdea7c478edcb68d0e885176ea"
+}

@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT c.id, c.participant_id, c.template_id, c.kind as \"kind: TemplateKind\", c.file_key,\n               c.status as \"status: CredentialStatus\", c.attempts, c.last_error, c.issued_at, c.updated_at\n        FROM credentials c\n        JOIN participants p ON c.participant_id = p.id\n        WHERE p.event_id = $1 AND c.status = 'failed'\n        ORDER BY c.updated_at DESC\n        LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "participant_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "template_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "kind: TemplateKind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "file_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "status: CredentialStatus",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "attempts",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "last_error",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "issued_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "73fc6784ff1d11c202c5e07b3f3315aa836b5094b2d0406bc26303d95133aedb"
+}

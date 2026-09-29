@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO credentials (participant_id, template_id, kind)\n        SELECT p.id, $2, $3\n        FROM participants p\n        WHERE p.participant_type_id = $1\n        ON CONFLICT (participant_id, template_id) DO NOTHING\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "0499e598f6b9ca928eef210206aa446e2297e324ddac333b2871d0481919d47a"
+}

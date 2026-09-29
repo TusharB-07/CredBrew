@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO scan_events (short_code)\n        VALUES ($1)\n        RETURNING id, short_code, scanned_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "short_code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "scanned_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "9e03dec7505113c138aa9abb691ded754c1df12008d08e33c4fcff12b122edd9"
+}

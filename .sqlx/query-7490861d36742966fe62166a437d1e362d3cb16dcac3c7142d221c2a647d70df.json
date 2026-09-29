@@ -1,0 +1,79 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE credentials\n        SET status = $2,\n            file_key = COALESCE($3, file_key),\n            last_error = $4,\n            attempts = CASE WHEN $2 = 'failed' THEN attempts + 1 ELSE attempts END,\n            updated_at = now()\n        WHERE id = $1\n        RETURNING id, participant_id, template_id, kind as \"kind: TemplateKind\", file_key,\n                  status as \"status: CredentialStatus\", attempts, last_error, issued_at, updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "participant_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "template_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "kind: TemplateKind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "file_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "status: CredentialStatus",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "attempts",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "last_error",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "issued_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "7490861d36742966fe62166a437d1e362d3cb16dcac3c7142d221c2a647d70df"
+}

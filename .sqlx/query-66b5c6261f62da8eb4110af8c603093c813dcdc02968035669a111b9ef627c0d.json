@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM issue_jobs\n        WHERE id = (\n            SELECT id FROM issue_jobs\n            ORDER BY created_at\n            FOR UPDATE SKIP LOCKED\n            LIMIT 1\n        )\n        RETURNING credential_id, send_email\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "credential_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "send_email",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "66b5c6261f62da8eb4110af8c603093c813dcdc02968035669a111b9ef627c0d"
+}

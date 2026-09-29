@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        CREATE TABLE IF NOT EXISTS issue_jobs (\n            id BIGSERIAL PRIMARY KEY,\n            credential_id UUID NOT NULL,\n            send_email BOOLEAN NOT NULL DEFAULT true,\n            created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n        )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "baaae895814a9dadcde4f303c20c8097490557c947e374485bc9a68f90deacbe"
+}
