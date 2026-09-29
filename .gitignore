@@ -1,0 +1,16 @@
+# Rust / Cargo build artifacts
+target/
+
+# Environment secrets
+.env
+.env.local
+
+# OS / editor
+.DS_Store
+*.swp
+
+# Frontend build output
+frontend/dist/
+
+# SQLx offline cache (optional)
+.cargo/
