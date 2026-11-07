@@ -1,13 +1,16 @@
-use sqlx::PgPool;
 use credbrew_core::{
-    storage::{StorageClient, Config as StorageConfig},
+    crypto::KeyStore,
     error::CoreError,
+    storage::{Config as StorageConfig, StorageClient},
 };
+use sqlx::PgPool;
+use std::sync::Arc;
 
 pub struct AppState {
     pub pool: PgPool,
     pub config: AppConfig,
     pub storage: StorageClient,
+    pub keystore: Arc<dyn KeyStore>,
 }
 
 #[derive(Clone)]

@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod dids;
 pub mod events;
 pub mod files;
 pub mod issue;

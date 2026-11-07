@@ -39,12 +39,17 @@ A Rust + React platform for issuing verifiable badges and certificates to event 
 
 Key tables:
 - `users` — Organizer accounts
-- `events` — Events owned by users
+- `tenants` — Workspaces/organizations (multi-tenancy, v1.0)
+- `tenant_memberships` — User × tenant × role (owner/admin/member)
+- `events` — Events owned by users, scoped to a tenant
 - `participant_types` — Speaker/Winner/Attendee/custom per event
 - `participants` — People attending events
 - `templates` — SVG templates per (type, kind) with zone config
 - `credentials` — Issued credentials with status tracking
 - `scan_events` — QR code scan logs
+- `issuer_dids` — Tenant's did:web identifiers (v1.0 Phase 2)
+- `signing_keys` — Ed25519 keypairs, sealed at rest (v1.0 Phase 2)
+- `status_lists` — BitstringStatusList 2021 for revocation (v1.0 Phase 4)
 
 ## Quick Start
 
@@ -160,6 +165,16 @@ Frontend runs on `http://localhost:3000` (proxies `/api` to backend)
 ### Public (No Auth)
 - `GET /api/public/verify/:code` — JSON verification + scan log
 - `GET /v/:code` — SSR HTML page with OG tags, LinkedIn buttons
+- `GET /tenants/:slug/did.json` — DID document for did:web resolution (sub-path tenants)
+- `GET /.well-known/did.json` — DID document for root-domain self-hosted tenants
+
+### DID + Signing (v1.0 Phase 2 — Tenant Admin)
+- `POST /api/tenants/me/did` — Mint a new did:web identifier + Ed25519 keypair for the active tenant
+- `GET /api/tenants/me/did` — Get the active issuer DID + signing key
+- `GET /api/tenants/me/keys` — List all signing keys (active/retired/revoked)
+- `POST /api/tenants/me/keys/:id/retire` — Retire a signing key (keeps old credentials verifiable)
+- `POST /api/tenants/me/keys/:id/revoke` — Revoke a signing key (key compromise; old credentials fail verification)
+- `POST /api/tenants/me/sign-test` — Sign a sample VC with the tenant's active key, verify it back, return the signed VC + proof
 
 ## Render Engine
 

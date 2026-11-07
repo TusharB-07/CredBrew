@@ -93,6 +93,88 @@ impl ActiveTenant {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DID + signing (v1.0 Phase 2) — see CredBrew v1.0 Design RFC §4
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct IssuerDid {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub did: String,
+    pub method: String,
+    pub did_document: serde_json::Value,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[serde(rename_all = "lowercase")]
+#[sqlx(type_name = "TEXT", rename_all = "lowercase")]
+pub enum SigningKeyStatus {
+    Active,
+    Retired,
+    Revoked,
+}
+
+impl SigningKeyStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SigningKeyStatus::Active => "active",
+            SigningKeyStatus::Retired => "retired",
+            SigningKeyStatus::Revoked => "revoked",
+        }
+    }
+}
+
+impl std::str::FromStr for SigningKeyStatus {
+    type Err = crate::error::CoreError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "active" => Ok(SigningKeyStatus::Active),
+            "retired" => Ok(SigningKeyStatus::Retired),
+            "revoked" => Ok(SigningKeyStatus::Revoked),
+            other => Err(crate::error::CoreError::TemplateValidation(format!(
+                "unknown signing key status: {other}"
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct SigningKey {
+    pub id: Uuid,
+    pub issuer_did_id: Uuid,
+    pub key_id: String,
+    pub public_key_multibase: String,
+    /// Encrypted 32-byte Ed25519 seed. Never serialized to API responses.
+    #[serde(skip)]
+    pub encrypted_seed: Vec<u8>,
+    pub status: SigningKeyStatus,
+    pub created_at: DateTime<Utc>,
+    pub retired_at: Option<DateTime<Utc>>,
+}
+
+/// A SigningKey with its encrypted seed decrypted back to the raw 32 bytes.
+/// Lives only in memory, never persisted, never serialized.
+pub struct DecryptedSigningKey {
+    pub signing_key_id: Uuid,
+    pub key_id: String,
+    pub did: String,
+    pub seed: [u8; 32],
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct StatusList {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub index: i32,
+    pub bitstring: Vec<u8>,
+    pub vc_id: String,
+    pub updated_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct Event {
     pub id: Uuid,

@@ -84,6 +84,18 @@ pub enum CoreError {
 
     #[error("multipart error: {0}")]
     Multipart(#[from] axum::extract::multipart::MultipartError),
+
+    #[error("DID error: {0}")]
+    Did(String),
+
+    #[error("signing error: {0}")]
+    Signing(String),
+
+    #[error("verification error: {0}")]
+    Verification(String),
+
+    #[error("KMS error: {0}")]
+    Kms(String),
 }
 
 pub type Result<T> = std::result::Result<T, CoreError>;
