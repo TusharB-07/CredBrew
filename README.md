@@ -1,23 +1,27 @@
-# CredBrew — Credential Issuing Platform
+# CredBrew — Verifiable Credential Issuing Platform
 
-A Rust + React platform for issuing verifiable badges and certificates to event participants.
+A self-hostable, open-source alternative to Credly for issuing **cryptographically verifiable** badges and certificates. Every credential is a W3C Verifiable Credential signed with the issuer's own Ed25519 key, anchored to a did:web identifier, and optionally timestamped on-chain (Polygon). Recipients own their credentials — they can export them to any OB 3.0-compatible wallet (Badgr, Spruce, Disco) and verify them independently of CredBrew's servers.
+
+**v1.0 status:** Phases 1–6 complete (multi-tenancy, DIDs + signing, VC issuance, revocation + status lists, recipient wallet with magic-link auth, optional on-chain anchoring).
 
 ## Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Frontend      │     │   API Server    │     │   Worker        │
-│   (React/TS)    │────▶│   (Axum)        │────▶│   (Apalis)      │
-│   Port 3000     │     │   Port 8080     │     │   Background    │
-└─────────────────┘     └────────┬────────┘     └────────┬────────┘
-                                 │                       │
-                    ┌────────────┴────────────┐          │
-                    ▼                         ▼          ▼
-            ┌─────────────┐            ┌─────────────┐ ┌─────────┐
-            │ PostgreSQL  │            │   MinIO/S3  │ │ Mailhog │
-            │  (Data)     │            │  (Storage)  │ │ (Email) │
-            └─────────────┘            └─────────────┘ └─────────┘
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   Frontend      │     │   API Server    │     │   Worker        │     │   Anchor        │
+│   (React/TS)    │────▶│   (Axum)        │────▶│   (VC signing)  │────▶│   (Polygon RPC) │
+│   Port 3000     │     │   Port 8080     │     │   Background    │     │   Optional      │
+└─────────────────┘     └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+                                 │                       │                       │
+                    ┌────────────┴────────────┐          │                       │
+                    ▼                         ▼          ▼                       ▼
+            ┌─────────────┐            ┌─────────────┐ ┌─────────┐       ┌───────────┐
+            │ PostgreSQL  │            │   MinIO/S3  │ │ Mailhog │       │ Polygon   │
+            │ (Data+Queue)│            │  (Storage)  │ │ (Email) │       │ (On-chain)│
+            └─────────────┘            └─────────────┘ └─────────┘       └───────────┘
 ```
+
+**Trust model:** Credentials are signed with Ed25519 (Ed25519Signature2020 LD-Proof). The issuer's public key is published in a did:web DID document served at `/.well-known/did.json` or `/tenants/{slug}/did.json`. Verification = fetch the DID document, extract the public key, verify the signature. **CredBrew's server is not required for verification** — the credential is self-contained.
 
 ## Tech Stack
 
@@ -126,6 +130,27 @@ Frontend runs on `http://localhost:3000` (proxies `/api` to backend)
 | `SMTP_PASS` | SMTP password | (empty) |
 | `SMTP_FROM` | From address | `CredBrew <no-reply@credbrew.local>` |
 | `EMAIL_PER_MIN` | Email rate limit | `60` |
+| `CREDBREW_MASTER_KEY` | KMS master key for sealing Ed25519 signing seeds (16+ chars) | Required (v1.0+) |
+
+### On-Chain Anchoring (Phase 6, optional — only if `tenants.anchoring_enabled = true`)
+
+| Variable | Description |
+|----------|-------------|
+| `ETH_RPC_URL` | Polygon RPC endpoint (e.g. `https://polygon-rpc.com`) |
+| `ANCHOR_PRIVATE_KEY` | Funded wallet's private key (hex, no 0x prefix) |
+| `ANCHOR_WALLET_ADDRESS` | The wallet's ETH address (hex with 0x) |
+
+## Binaries
+
+CredBrew ships four binaries:
+
+```bash
+cargo run --bin credbrew-api       # HTTP server (port 8080)
+cargo run --bin credbrew-worker    # Background VC signing + PNG rendering + email
+cargo run --bin credbrew-anchor    # Optional: on-chain anchoring (Polygon RPC)
+cargo run --bin seed               # Demo data: demo user + TechConf 2025 + sample participants
+cargo run --bin migrate_to_v1      # One-time v0.1 → v1.0 migration (creates tenants, backfills tenant_id)
+```
 
 ## API Endpoints
 
@@ -164,10 +189,16 @@ Frontend runs on `http://localhost:3000` (proxies `/api` to backend)
 
 ### Public (No Auth)
 - `GET /api/public/verify/:code` — JSON verification + scan log
-- `GET /v/:code` — SSR HTML page with OG tags, LinkedIn buttons
+- `GET /v/:code` — SSR HTML page with proof block, DID, wallet dropdown, chain link, LinkedIn buttons
 - `GET /api/public/vc/:code` — Download the raw Verifiable Credential (.vc.json) for wallet import
 - `GET /tenants/:slug/did.json` — DID document for did:web resolution (sub-path tenants)
 - `GET /.well-known/did.json` — DID document for root-domain self-hosted tenants
+- `GET /tenants/:slug/status/:index` — Signed StatusListCredential (BitstringStatusList 2021) for revocation checking
+
+### Recipient Auth (v1.0 Phase 5 — Magic Link)
+- `POST /api/auth/magic-link` — Request a magic link emailed to a recipient (always returns 200 to prevent email enumeration)
+- `GET /api/auth/magic-link/verify?token=...` — Exchange a magic link token for a recipient session, redirects to /my/credentials
+- `GET /my/credentials?session=...&email=...` — Recipient's read-only credential wallet (all credentials issued to their email)
 
 ### DID + Signing (v1.0 Phase 2 — Tenant Admin)
 - `POST /api/tenants/me/did` — Mint a new did:web identifier + Ed25519 keypair for the active tenant
