@@ -29,6 +29,8 @@ tokio-stream = { workspace = true }
 futures = "0.3"
 governor = { version = "0.6", features = ["futures"] }
 dotenv = "0.15"
+# v1.0 Phase 3: VC signing in the worker
+ed25519-dalek = { workspace = true }
 
 [dev-dependencies]
 sqlx = { workspace = true, features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "macros"] }
