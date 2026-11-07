@@ -49,6 +49,14 @@ lazy_static = "1.4"
 bytes = "1"
 quick-xml = "0.31"
 
+# v1.0 — DID + Verifiable Credentials (Phase 2)
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+multibase = "0.9"
+bs58 = "0.5"
+sha2 = "0.10"
+hex = "0.4"
+serde_json_with_preserve_order = { package = "serde_json", version = "1.0", features = ["preserve_order"] }
+
 [profile.release]
 lto = true
 codegen-units = 1
