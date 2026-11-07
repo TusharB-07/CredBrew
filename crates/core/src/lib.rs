@@ -1,4 +1,6 @@
+pub mod crypto;
 pub mod db;
+pub mod did;
 pub mod error;
 pub mod models;
 pub mod queue;
