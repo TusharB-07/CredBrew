@@ -82,7 +82,7 @@ async fn main() -> Result<(), CoreError> {
         )
         .route(
             "/api/auth/login",
-            post(routes::auth::login).layer(auth_limiter),
+            post(routes::auth::login).layer(auth_limiter.clone()),
         )
         .route(
             "/api/public/verify/{code}",
@@ -110,6 +110,24 @@ async fn main() -> Result<(), CoreError> {
         .route(
             "/.well-known/did.json",
             get(routes::dids::serve_root_did_document),
+        )
+        // v1.0 Phase 4: signed StatusListCredential for revocation checking
+        .route(
+            "/tenants/{slug}/status/{index}",
+            get(routes::public::serve_status_list_credential),
+        )
+        // v1.0 Phase 5: recipient magic-link auth + /my/credentials wallet
+        .route(
+            "/api/auth/magic-link",
+            post(routes::recipient::request_magic_link).layer(auth_limiter.clone()),
+        )
+        .route(
+            "/api/auth/magic-link/verify",
+            get(routes::recipient::verify_magic_link),
+        )
+        .route(
+            "/my/credentials",
+            get(routes::recipient::my_credentials_page),
         );
 
     let protected_routes = Router::new()
