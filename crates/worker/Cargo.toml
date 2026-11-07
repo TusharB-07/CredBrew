@@ -31,6 +31,9 @@ governor = { version = "0.6", features = ["futures"] }
 dotenv = "0.15"
 # v1.0 Phase 3: VC signing in the worker
 ed25519-dalek = { workspace = true }
+# v1.0 Phase 6: anchoring hash computation
+sha2 = { workspace = true }
+hex = { workspace = true }
 
 [dev-dependencies]
 sqlx = { workspace = true, features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "macros"] }
