@@ -12,10 +12,92 @@ pub struct User {
     pub created_at: DateTime<Utc>,
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-tenancy (v1.0) — see CredBrew v1.0 Design RFC §10.1
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[serde(rename_all = "lowercase")]
+#[sqlx(type_name = "TEXT", rename_all = "lowercase")]
+pub enum TenantRole {
+    Owner,
+    Admin,
+    Member,
+}
+
+impl TenantRole {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TenantRole::Owner => "owner",
+            TenantRole::Admin => "admin",
+            TenantRole::Member => "member",
+        }
+    }
+
+    /// True if this role can manage tenant settings, members, and billing.
+    pub fn can_admin(self) -> bool {
+        matches!(self, TenantRole::Owner | TenantRole::Admin)
+    }
+}
+
+impl std::str::FromStr for TenantRole {
+    type Err = crate::error::CoreError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "owner" => Ok(TenantRole::Owner),
+            "admin" => Ok(TenantRole::Admin),
+            "member" => Ok(TenantRole::Member),
+            other => Err(crate::error::CoreError::TemplateValidation(format!(
+                "unknown tenant role: {other}"
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct Tenant {
+    pub id: Uuid,
+    pub slug: String,
+    pub name: String,
+    pub domain: Option<String>,
+    pub plan: String,
+    pub anchoring_enabled: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct TenantMembership {
+    pub user_id: Uuid,
+    pub tenant_id: Uuid,
+    pub role: TenantRole,
+    pub created_at: DateTime<Utc>,
+}
+
+/// A tenant plus the requesting user's role in it. Returned by the auth
+/// middleware and attached to every authenticated request as the "active
+/// tenant" context.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActiveTenant {
+    pub tenant: Tenant,
+    pub role: TenantRole,
+}
+
+impl ActiveTenant {
+    pub fn id(&self) -> Uuid {
+        self.tenant.id
+    }
+
+    pub fn can_admin(&self) -> bool {
+        self.role.can_admin()
+    }
+}
+
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct Event {
     pub id: Uuid,
     pub owner_id: Uuid,
+    pub tenant_id: Option<Uuid>,
     pub name: String,
     pub event_date: Option<NaiveDate>,
     pub org_name: String,
