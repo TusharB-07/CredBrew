@@ -1,17 +1,17 @@
-use axum::{
-    extract::{State, Path},
-    Json,
-    response::{Html, IntoResponse, Response},
-};
-use serde::Serialize;
-use chrono::Datelike;
 use crate::state::AppState;
+use askama::Template;
+use axum::{
+    extract::{Path, State},
+    response::{Html, IntoResponse, Response},
+    Json,
+};
+use chrono::Datelike;
 use credbrew_core::{
     db::{credentials, scan_events},
-    models::CredentialStatus,
     error::CoreError,
+    models::CredentialStatus,
 };
-use askama::Template;
+use serde::Serialize;
 
 #[derive(Serialize)]
 pub struct VerifyResponse {
@@ -35,8 +35,18 @@ fn credential_asset_url(state: &AppState, code: &str) -> String {
     )
 }
 
-fn linkedin_urls(state: &AppState, code: &str, org_name: &str, event_date: Option<chrono::NaiveDate>, linkedin_name: &str) -> (String, String) {
-    let verify_url = format!("{}/v/{}", state.config.public_base_url.trim_end_matches('/'), code);
+fn linkedin_urls(
+    state: &AppState,
+    code: &str,
+    org_name: &str,
+    event_date: Option<chrono::NaiveDate>,
+    linkedin_name: &str,
+) -> (String, String) {
+    let verify_url = format!(
+        "{}/v/{}",
+        state.config.public_base_url.trim_end_matches('/'),
+        code
+    );
 
     let linkedin_add_url = format!(
         "https://www.linkedin.com/profile/add?startTask=CERTIFICATION_NAME&name={}&organizationName={}&issueYear={}&issueMonth={}&certUrl={}",
@@ -60,7 +70,8 @@ pub async fn verify_credential(
     State(state): State<std::sync::Arc<AppState>>,
     Path(code): Path<String>,
 ) -> Result<Json<VerifyResponse>, CoreError> {
-    let details = credentials::get_credential_by_short_code(&state.pool, &code).await?
+    let details = credentials::get_credential_by_short_code(&state.pool, &code)
+        .await?
         .ok_or_else(|| CoreError::NotFound("credential not found".into()))?;
 
     let (credential, participant, participant_type, event, _template) = details;
@@ -118,7 +129,8 @@ pub async fn verify_page(
     State(state): State<std::sync::Arc<AppState>>,
     Path(code): Path<String>,
 ) -> Result<impl IntoResponse, CoreError> {
-    let details = credentials::get_credential_by_short_code(&state.pool, &code).await?
+    let details = credentials::get_credential_by_short_code(&state.pool, &code)
+        .await?
         .ok_or_else(|| CoreError::NotFound("credential not found".into()))?;
 
     let (credential, participant, participant_type, event, _template) = details;
@@ -163,21 +175,18 @@ pub async fn verify_page(
         og_image_url,
     };
 
-    let html = tmpl.render().map_err(|e| CoreError::Internal(e.to_string()))?;
+    let html = tmpl
+        .render()
+        .map_err(|e| CoreError::Internal(e.to_string()))?;
 
     let mut response = Html(html).into_response();
-    response.headers_mut().insert(
-        "Cache-Control",
-        "public, max-age=300".parse().unwrap(),
-    );
+    response
+        .headers_mut()
+        .insert("Cache-Control", "public, max-age=300".parse().unwrap());
     Ok(response)
 }
 
-fn serve_stored_file(
-    file_key: &str,
-    bytes: Vec<u8>,
-    cache_control: &'static str,
-) -> Response {
+fn serve_stored_file(file_key: &str, bytes: Vec<u8>, cache_control: &'static str) -> Response {
     let (mime, as_attachment) = if file_key.ends_with(".png") {
         ("image/png", false)
     } else if file_key.ends_with(".svg") {
@@ -187,16 +196,19 @@ fn serve_stored_file(
     };
 
     let mut response = Response::new(axum::body::Body::from(bytes));
-    response.headers_mut().insert(
-        axum::http::header::CONTENT_TYPE,
-        mime.parse().unwrap(),
-    );
-    response.headers_mut().insert("Cache-Control", cache_control.parse().unwrap());
+    response
+        .headers_mut()
+        .insert(axum::http::header::CONTENT_TYPE, mime.parse().unwrap());
+    response
+        .headers_mut()
+        .insert("Cache-Control", cache_control.parse().unwrap());
     if as_attachment {
         let filename = file_key.split('/').next_back().unwrap_or("credential");
         response.headers_mut().insert(
             axum::http::header::CONTENT_DISPOSITION,
-            format!("attachment; filename=\"{}\"", filename).parse().unwrap(),
+            format!("attachment; filename=\"{}\"", filename)
+                .parse()
+                .unwrap(),
         );
     }
     response
@@ -207,7 +219,8 @@ pub async fn credential_asset(
     State(state): State<std::sync::Arc<AppState>>,
     Path(code): Path<String>,
 ) -> Result<Response, CoreError> {
-    let details = credentials::get_credential_by_short_code(&state.pool, &code).await?
+    let details = credentials::get_credential_by_short_code(&state.pool, &code)
+        .await?
         .ok_or_else(|| CoreError::NotFound("credential not found".into()))?;
 
     let (credential, _, _, _, _) = details;
@@ -216,7 +229,9 @@ pub async fn credential_asset(
         return Err(CoreError::Gone("credential revoked".into()));
     }
 
-    let file_key = credential.file_key.ok_or_else(|| CoreError::NotFound("credential file not found".into()))?;
+    let file_key = credential
+        .file_key
+        .ok_or_else(|| CoreError::NotFound("credential file not found".into()))?;
     let bytes = state.storage.get(&file_key).await?;
 
     Ok(serve_stored_file(&file_key, bytes, "public, max-age=300"))
@@ -227,7 +242,8 @@ pub async fn og_image(
     State(state): State<std::sync::Arc<AppState>>,
     Path(code): Path<String>,
 ) -> Result<Response, CoreError> {
-    let details = credentials::get_credential_by_short_code(&state.pool, &code).await?
+    let details = credentials::get_credential_by_short_code(&state.pool, &code)
+        .await?
         .ok_or_else(|| CoreError::NotFound("credential not found".into()))?;
 
     let (credential, _, _, _, _) = details;
@@ -236,8 +252,57 @@ pub async fn og_image(
         return Err(CoreError::Gone("credential revoked".into()));
     }
 
-    let file_key = credential.file_key.ok_or_else(|| CoreError::NotFound("credential file not found".into()))?;
+    let file_key = credential
+        .file_key
+        .ok_or_else(|| CoreError::NotFound("credential file not found".into()))?;
     let bytes = state.storage.get(&file_key).await?;
 
     Ok(serve_stored_file(&file_key, bytes, "public, max-age=86400"))
+}
+
+/// v1.0 Phase 3: Download the raw Verifiable Credential as .vc.json.
+/// Returns the full signed VC document (with proof) for import into any
+/// OB 3.0-compatible wallet (Badgr, Spruce, Disbadge, etc.).
+#[axum::debug_handler]
+pub async fn download_vc(
+    State(state): State<std::sync::Arc<AppState>>,
+    Path(code): Path<String>,
+) -> Result<Response, CoreError> {
+    let details = credentials::get_credential_by_short_code(&state.pool, &code)
+        .await?
+        .ok_or_else(|| CoreError::NotFound("credential not found".into()))?;
+
+    let (credential, _, _, _, _) = details;
+
+    if credential.status == CredentialStatus::Revoked {
+        return Err(CoreError::Gone("credential revoked".into()));
+    }
+
+    let vc_json = credential.vc_json.ok_or_else(|| {
+        CoreError::NotFound(
+            "credential has no Verifiable Credential (issued before VC support was enabled)".into(),
+        )
+    })?;
+
+    let body = serde_json::to_vec_pretty(&vc_json)
+        .map_err(|e| CoreError::Internal(format!("failed to serialize VC: {e}")))?;
+
+    let mut response = Response::new(axum::body::Body::from(body));
+    response.headers_mut().insert(
+        axum::http::header::CONTENT_TYPE,
+        "application/ld+json".parse().unwrap(),
+    );
+    response.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        "public, max-age=300".parse().unwrap(),
+    );
+    // Suggest a filename for download.
+    let filename = format!("credential-{}.vc.json", code);
+    response.headers_mut().insert(
+        axum::http::header::CONTENT_DISPOSITION,
+        format!("attachment; filename=\"{filename}\"")
+            .parse()
+            .unwrap(),
+    );
+    Ok(response)
 }
