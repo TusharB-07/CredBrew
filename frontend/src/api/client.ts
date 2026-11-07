@@ -21,6 +21,7 @@ export type {
 const API_BASE = '/api';
 
 let authToken: string | null = null;
+let activeTenantId: string | null = null;
 
 export function setAuthToken(token: string | null) {
   authToken = token;
@@ -38,16 +39,44 @@ export function getAuthToken(): string | null {
   return authToken;
 }
 
-async function fetchWithAuth<T>(path: string, options: RequestInit = {}): Promise<T> {
+// v1.0: tenant context. The frontend tracks the active tenant (from the
+// tenant switcher UI) and sends its id as X-Tenant-ID on every authenticated
+// request. If null, the backend defaults to the user's oldest membership.
+export function setActiveTenantId(id: string | null) {
+  activeTenantId = id;
+  if (id) {
+    localStorage.setItem('active_tenant_id', id);
+  } else {
+    localStorage.removeItem('active_tenant_id');
+  }
+}
+
+export function getActiveTenantId(): string | null {
+  if (!activeTenantId) {
+    activeTenantId = localStorage.getItem('active_tenant_id');
+  }
+  return activeTenantId;
+}
+
+function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
   const token = getAuthToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  const tenantId = getActiveTenantId();
+  if (tenantId) {
+    headers['X-Tenant-ID'] = tenantId;
+  }
+  return headers;
+}
+
+async function fetchWithAuth<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
+    ...authHeaders(),
     ...options.headers,
   };
-
-  if (token) {
-    (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
-  }
 
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -73,11 +102,9 @@ async function fetchWithAuth<T>(path: string, options: RequestInit = {}): Promis
 }
 
 async function fetchMultipart<T>(path: string, formData: FormData): Promise<T> {
-  const token = getAuthToken();
-  const headers: HeadersInit = {};
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
+  const headers: HeadersInit = {
+    ...authHeaders(),
+  };
 
   const response = await fetch(`${API_BASE}${path}`, {
     method: 'POST',

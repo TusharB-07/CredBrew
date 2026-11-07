@@ -1,15 +1,15 @@
-use sqlx::PgPool;
-use uuid::Uuid;
-use argon2::{PasswordHasher, Argon2};
-use argon2::password_hash::{SaltString, rand_core::OsRng};
+use argon2::password_hash::{rand_core::OsRng, SaltString};
+use argon2::{Argon2, PasswordHasher};
 use credbrew_core::{
-    db::{users, events, participant_types, participants, templates},
-    models::{TemplateKind, NameZone, QrZone},
-    storage::{StorageClient, Config as StorageConfig},
-    short_code::generate_unique_short_code,
+    db::{events, participant_types, participants, templates, tenants as tenant_db, users},
     error::CoreError,
+    models::{NameZone, QrZone, TemplateKind},
+    short_code::generate_unique_short_code,
+    storage::{Config as StorageConfig, StorageClient},
 };
+use sqlx::PgPool;
 use std::env;
+use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> Result<(), CoreError> {
@@ -28,23 +28,47 @@ async fn main() -> Result<(), CoreError> {
     let password = "opendemo123";
 
     let salt = SaltString::generate(&mut OsRng);
-    let password_hash = Argon2::default().hash_password(password.as_bytes(), &salt)?.to_string();
+    let password_hash = Argon2::default()
+        .hash_password(password.as_bytes(), &salt)?
+        .to_string();
 
     let user = match users::get_user_by_email(&pool, email).await? {
         Some(u) => u,
         None => users::create_user(&pool, email, &password_hash, "Demo User").await?,
     };
 
-    let event = match events::get_events_by_owner(&pool, user.id).await?.first() {
+    // v1.0: ensure the demo user has a personal tenant.
+    let tenant = match tenant_db::list_tenants_for_user(&pool, user.id)
+        .await?
+        .into_iter()
+        .next()
+    {
+        Some((t, _)) => t,
+        None => {
+            let (t, _m) =
+                tenant_db::create_tenant_with_owner(&pool, "Demo Workspace", None, "free", user.id)
+                    .await?;
+            t
+        }
+    };
+
+    let event = match events::list_events_for_tenant(&pool, tenant.id)
+        .await?
+        .first()
+    {
         Some(e) => e.clone(),
-        None => events::create_event(
-            &pool,
-            user.id,
-            "TechConf 2025",
-            Some(chrono::NaiveDate::from_ymd_opt(2025, 6, 15).unwrap()),
-            "TechConf Org",
-            "#4F46E5",
-        ).await?,
+        None => {
+            events::create_event(
+                &pool,
+                user.id,
+                tenant.id,
+                "TechConf 2025",
+                Some(chrono::NaiveDate::from_ymd_opt(2025, 6, 15).unwrap()),
+                "TechConf Org",
+                "#4F46E5",
+            )
+            .await?
+        }
     };
 
     participant_types::create_default_types(&pool, event.id).await?;
@@ -58,23 +82,33 @@ async fn main() -> Result<(), CoreError> {
         ("David Okafor", "david@example.com", "Winner"),
         ("Eva Andersson", "eva@example.com", "Attendee"),
         ("José García", "jose@example.com", "Attendee"),
-        ("Hiroshi Tanaka \u{6771}\u{5B5D}", "hiroshi@example.com", "Attendee"),
+        (
+            "Hiroshi Tanaka \u{6771}\u{5B5D}",
+            "hiroshi@example.com",
+            "Attendee",
+        ),
     ];
 
     for (name, email, type_name) in sample_participants {
         let pt = types.iter().find(|t| t.name == type_name).unwrap();
-        let existing = participants::get_participant_by_event_and_email(&pool, event.id, email).await?;
+        let existing =
+            participants::get_participant_by_event_and_email(&pool, event.id, email).await?;
         if existing.is_none() {
             let short_code = generate_unique_short_code(|code| {
                 let pool = pool.clone();
                 async move {
-                    let existing = sqlx::query_scalar!("SELECT 1 FROM participants WHERE short_code = $1", code)
-                        .fetch_optional(&pool)
-                        .await?;
+                    let existing = sqlx::query_scalar!(
+                        "SELECT 1 FROM participants WHERE short_code = $1",
+                        code
+                    )
+                    .fetch_optional(&pool)
+                    .await?;
                     Ok(existing.is_some())
                 }
-            }).await?;
-            participants::create_participant(&pool, event.id, pt.id, name, email, &short_code).await?;
+            })
+            .await?;
+            participants::create_participant(&pool, event.id, pt.id, name, email, &short_code)
+                .await?;
         }
     }
 
@@ -83,7 +117,9 @@ async fn main() -> Result<(), CoreError> {
 
     for pt in &types {
         let badge_key = format!("templates/{}/badge.svg", pt.id);
-        storage.put(&badge_key, badge_svg.as_bytes().to_vec(), "image/svg+xml").await?;
+        storage
+            .put(&badge_key, badge_svg.as_bytes().to_vec(), "image/svg+xml")
+            .await?;
 
         let name_zone = NameZone {
             x_pct: 10.0,
@@ -106,10 +142,13 @@ async fn main() -> Result<(), CoreError> {
             &badge_key,
             serde_json::to_value(name_zone.clone())?,
             serde_json::to_value(qr_zone.clone())?,
-        ).await?;
+        )
+        .await?;
 
         let cert_key = format!("templates/{}/certificate.svg", pt.id);
-        storage.put(&cert_key, cert_svg.as_bytes().to_vec(), "image/svg+xml").await?;
+        storage
+            .put(&cert_key, cert_svg.as_bytes().to_vec(), "image/svg+xml")
+            .await?;
 
         templates::create_template(
             &pool,
@@ -118,7 +157,8 @@ async fn main() -> Result<(), CoreError> {
             &cert_key,
             serde_json::to_value(name_zone)?,
             serde_json::to_value(qr_zone)?,
-        ).await?;
+        )
+        .await?;
     }
 
     let token = create_token(&user.id)?;
@@ -132,13 +172,18 @@ async fn main() -> Result<(), CoreError> {
 }
 
 fn create_token(user_id: &Uuid) -> Result<String, CoreError> {
-    use jsonwebtoken::{encode, Header, EncodingKey};
-    use chrono::{Utc, Duration};
+    use chrono::{Duration, Utc};
     use credbrew_core::models::Claims;
+    use jsonwebtoken::{encode, EncodingKey, Header};
 
-    let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| "change-me-64-chars-minimum-length-for-security".into());
+    let jwt_secret = env::var("JWT_SECRET")
+        .unwrap_or_else(|_| "change-me-64-chars-minimum-length-for-security".into());
     let exp = (Utc::now() + Duration::hours(24)).timestamp() as usize;
     let claims = Claims { sub: *user_id, exp };
-    let token = encode(&Header::default(), &claims, &EncodingKey::from_secret(jwt_secret.as_bytes()))?;
+    let token = encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(jwt_secret.as_bytes()),
+    )?;
     Ok(token)
 }
