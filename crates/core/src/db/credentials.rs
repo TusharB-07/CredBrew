@@ -1,7 +1,7 @@
+use crate::error::CoreError;
+use crate::models::{Credential, CredentialStatus, TemplateKind};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
-use crate::models::{Credential, CredentialStatus, TemplateKind};
-use crate::error::CoreError;
 
 pub async fn create_credentials_for_type(
     pool: &PgPool,
@@ -18,7 +18,9 @@ pub async fn create_credentials_for_type(
         ON CONFLICT (participant_id, template_id) DO NOTHING
         RETURNING id
         "#,
-        participant_type_id, template_id, kind as TemplateKind
+        participant_type_id,
+        template_id,
+        kind as TemplateKind
     )
     .fetch_all(pool)
     .await?;
@@ -54,7 +56,7 @@ pub async fn get_credentials_by_event(
         FROM credentials c
         JOIN participants p ON c.participant_id = p.id
         WHERE p.event_id = $1
-        "#
+        "#,
     );
     let mut param_idx = 2;
 
@@ -94,7 +96,8 @@ pub async fn get_credential_by_participant_and_template(
         FROM credentials
         WHERE participant_id = $1 AND template_id = $2
         "#,
-        participant_id, template_id
+        participant_id,
+        template_id
     )
     .fetch_optional(pool)
     .await?;
@@ -121,14 +124,20 @@ pub async fn update_credential_status(
         RETURNING id, participant_id, template_id, kind as "kind: TemplateKind", file_key,
                   status as "status: CredentialStatus", attempts, last_error, issued_at, updated_at
         "#,
-        id, status as CredentialStatus, file_key, last_error
+        id,
+        status as CredentialStatus,
+        file_key,
+        last_error
     )
     .fetch_optional(pool)
     .await?;
     Ok(credential)
 }
 
-pub async fn reset_credential_to_pending(pool: &PgPool, id: Uuid) -> Result<Option<Credential>, CoreError> {
+pub async fn reset_credential_to_pending(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<Option<Credential>, CoreError> {
     let credential = sqlx::query_as!(
         Credential,
         r#"
@@ -269,7 +278,10 @@ pub async fn get_issued_counts_by_type(
 pub async fn get_credential_statuses_by_participants(
     pool: &PgPool,
     participant_ids: &[Uuid],
-) -> Result<std::collections::HashMap<Uuid, (Option<CredentialStatus>, Option<CredentialStatus>)>, CoreError> {
+) -> Result<
+    std::collections::HashMap<Uuid, (Option<CredentialStatus>, Option<CredentialStatus>)>,
+    CoreError,
+> {
     let mut map = std::collections::HashMap::new();
     if participant_ids.is_empty() {
         return Ok(map);
@@ -324,7 +336,16 @@ pub async fn get_recent_failures(
 pub async fn get_credential_with_details(
     pool: &PgPool,
     credential_id: Uuid,
-) -> Result<Option<(Credential, crate::models::Participant, crate::models::ParticipantType, crate::models::Event, Template)>, CoreError> {
+) -> Result<
+    Option<(
+        Credential,
+        crate::models::Participant,
+        crate::models::ParticipantType,
+        crate::models::Event,
+        Template,
+    )>,
+    CoreError,
+> {
     let row = sqlx::query!(
         r#"
         SELECT
@@ -378,6 +399,7 @@ pub async fn get_credential_with_details(
         let event = crate::models::Event {
             id: row.e_id,
             owner_id: row.owner_id,
+            tenant_id: None, // v1.0: not needed by the worker; tenant scoping is enforced at the route layer.
             name: row.e_name,
             event_date: row.event_date,
             org_name: row.org_name,
@@ -392,7 +414,13 @@ pub async fn get_credential_with_details(
             name_zone: row.name_zone,
             qr_zone: row.qr_zone,
         };
-        Ok(Some((credential, participant, participant_type, event, template)))
+        Ok(Some((
+            credential,
+            participant,
+            participant_type,
+            event,
+            template,
+        )))
     } else {
         Ok(None)
     }
@@ -401,7 +429,16 @@ pub async fn get_credential_with_details(
 pub async fn get_credential_by_short_code(
     pool: &PgPool,
     short_code: &str,
-) -> Result<Option<(Credential, crate::models::Participant, crate::models::ParticipantType, crate::models::Event, Template)>, CoreError> {
+) -> Result<
+    Option<(
+        Credential,
+        crate::models::Participant,
+        crate::models::ParticipantType,
+        crate::models::Event,
+        Template,
+    )>,
+    CoreError,
+> {
     let row = sqlx::query!(
         r#"
         SELECT
@@ -455,6 +492,7 @@ pub async fn get_credential_by_short_code(
         let event = crate::models::Event {
             id: row.e_id,
             owner_id: row.owner_id,
+            tenant_id: None, // v1.0: not needed by the verify flow; tenant scoping is enforced at the route layer.
             name: row.e_name,
             event_date: row.event_date,
             org_name: row.org_name,
@@ -469,7 +507,13 @@ pub async fn get_credential_by_short_code(
             name_zone: row.name_zone,
             qr_zone: row.qr_zone,
         };
-        Ok(Some((credential, participant, participant_type, event, template)))
+        Ok(Some((
+            credential,
+            participant,
+            participant_type,
+            event,
+            template,
+        )))
     } else {
         Ok(None)
     }
