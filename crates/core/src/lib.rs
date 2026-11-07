@@ -7,6 +7,7 @@ pub mod queue;
 pub mod render;
 pub mod short_code;
 pub mod storage;
+pub mod vc;
 
 pub fn init_tracing() {
     tracing_subscriber::fmt()

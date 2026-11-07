@@ -4,6 +4,7 @@ pub mod issuer_dids;
 pub mod participant_types;
 pub mod participants;
 pub mod scan_events;
+pub mod status_lists;
 pub mod templates;
 pub mod tenants;
 pub mod users;

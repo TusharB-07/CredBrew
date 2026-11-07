@@ -266,6 +266,12 @@ pub struct Credential {
     pub last_error: Option<String>,
     pub issued_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    // v1.0 Phase 3: Verifiable Credential fields (nullable for backward compat
+    // with v0.1 credentials that were issued before VC signing existed)
+    pub vc_id: Option<String>,
+    pub vc_json: Option<serde_json::Value>,
+    pub status_list_id: Option<Uuid>,
+    pub status_list_index: Option<i32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
