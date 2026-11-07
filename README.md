@@ -165,6 +165,7 @@ Frontend runs on `http://localhost:3000` (proxies `/api` to backend)
 ### Public (No Auth)
 - `GET /api/public/verify/:code` — JSON verification + scan log
 - `GET /v/:code` — SSR HTML page with OG tags, LinkedIn buttons
+- `GET /api/public/vc/:code` — Download the raw Verifiable Credential (.vc.json) for wallet import
 - `GET /tenants/:slug/did.json` — DID document for did:web resolution (sub-path tenants)
 - `GET /.well-known/did.json` — DID document for root-domain self-hosted tenants
 

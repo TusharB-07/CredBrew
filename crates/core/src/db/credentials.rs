@@ -3,6 +3,42 @@ use crate::models::{Credential, CredentialStatus, TemplateKind};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// v1.0 Phase 3: Verifiable Credential persistence
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Persist the signed Verifiable Credential on a credentials row.
+/// Called by the worker after `did::sign_document`. Also records the
+/// status list allocation so Phase 4 revocation can flip the bit.
+pub async fn set_credential_vc(
+    pool: &PgPool,
+    credential_id: Uuid,
+    vc_id: &str,
+    vc_json: &serde_json::Value,
+    status_list_id: Uuid,
+    status_list_index: i32,
+) -> Result<(), CoreError> {
+    sqlx::query(
+        r#"
+        UPDATE credentials
+        SET vc_id = $2,
+            vc_json = $3,
+            status_list_id = $4,
+            status_list_index = $5,
+            updated_at = now()
+        WHERE id = $1
+        "#,
+    )
+    .bind(credential_id)
+    .bind(vc_id)
+    .bind(vc_json)
+    .bind(status_list_id)
+    .bind(status_list_index)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn create_credentials_for_type(
     pool: &PgPool,
     participant_type_id: Uuid,
@@ -28,16 +64,16 @@ pub async fn create_credentials_for_type(
 }
 
 pub async fn get_credential(pool: &PgPool, id: Uuid) -> Result<Option<Credential>, CoreError> {
-    let credential = sqlx::query_as!(
-        Credential,
+    let credential = sqlx::query_as::<_, Credential>(
         r#"
-        SELECT id, participant_id, template_id, kind as "kind: TemplateKind", file_key,
-               status as "status: CredentialStatus", attempts, last_error, issued_at, updated_at
+        SELECT id, participant_id, template_id, kind as "kind", file_key,
+               status as "status", attempts, last_error, issued_at, updated_at,
+               vc_id, vc_json, status_list_id, status_list_index
         FROM credentials
         WHERE id = $1
         "#,
-        id
     )
+    .bind(id)
     .fetch_optional(pool)
     .await?;
     Ok(credential)
@@ -51,8 +87,9 @@ pub async fn get_credentials_by_event(
 ) -> Result<Vec<Credential>, CoreError> {
     let mut query = String::from(
         r#"
-        SELECT c.id, c.participant_id, c.template_id, c.kind as "kind: TemplateKind", c.file_key,
-               c.status as "status: CredentialStatus", c.attempts, c.last_error, c.issued_at, c.updated_at
+        SELECT c.id, c.participant_id, c.template_id, c.kind as "kind", c.file_key,
+               c.status as "status", c.attempts, c.last_error, c.issued_at, c.updated_at,
+               c.vc_id, c.vc_json, c.status_list_id, c.status_list_index
         FROM credentials c
         JOIN participants p ON c.participant_id = p.id
         WHERE p.event_id = $1
@@ -88,17 +125,17 @@ pub async fn get_credential_by_participant_and_template(
     participant_id: Uuid,
     template_id: Uuid,
 ) -> Result<Option<Credential>, CoreError> {
-    let credential = sqlx::query_as!(
-        Credential,
+    let credential = sqlx::query_as::<_, Credential>(
         r#"
-        SELECT id, participant_id, template_id, kind as "kind: TemplateKind", file_key,
-               status as "status: CredentialStatus", attempts, last_error, issued_at, updated_at
+        SELECT id, participant_id, template_id, kind as "kind", file_key,
+               status as "status", attempts, last_error, issued_at, updated_at,
+               vc_id, vc_json, status_list_id, status_list_index
         FROM credentials
         WHERE participant_id = $1 AND template_id = $2
         "#,
-        participant_id,
-        template_id
     )
+    .bind(participant_id)
+    .bind(template_id)
     .fetch_optional(pool)
     .await?;
     Ok(credential)
@@ -111,8 +148,7 @@ pub async fn update_credential_status(
     file_key: Option<&str>,
     last_error: Option<&str>,
 ) -> Result<Option<Credential>, CoreError> {
-    let credential = sqlx::query_as!(
-        Credential,
+    let credential = sqlx::query_as::<_, Credential>(
         r#"
         UPDATE credentials
         SET status = $2,
@@ -121,14 +157,15 @@ pub async fn update_credential_status(
             attempts = CASE WHEN $2 = 'failed' THEN attempts + 1 ELSE attempts END,
             updated_at = now()
         WHERE id = $1
-        RETURNING id, participant_id, template_id, kind as "kind: TemplateKind", file_key,
-                  status as "status: CredentialStatus", attempts, last_error, issued_at, updated_at
+        RETURNING id, participant_id, template_id, kind as "kind", file_key,
+                  status as "status", attempts, last_error, issued_at, updated_at,
+                  vc_id, vc_json, status_list_id, status_list_index
         "#,
-        id,
-        status as CredentialStatus,
-        file_key,
-        last_error
     )
+    .bind(id)
+    .bind(status as CredentialStatus)
+    .bind(file_key)
+    .bind(last_error)
     .fetch_optional(pool)
     .await?;
     Ok(credential)
@@ -138,37 +175,37 @@ pub async fn reset_credential_to_pending(
     pool: &PgPool,
     id: Uuid,
 ) -> Result<Option<Credential>, CoreError> {
-    let credential = sqlx::query_as!(
-        Credential,
+    let credential = sqlx::query_as::<_, Credential>(
         r#"
         UPDATE credentials
         SET status = 'pending',
             last_error = NULL,
             updated_at = now()
         WHERE id = $1
-        RETURNING id, participant_id, template_id, kind as "kind: TemplateKind", file_key,
-                  status as "status: CredentialStatus", attempts, last_error, issued_at, updated_at
+        RETURNING id, participant_id, template_id, kind as "kind", file_key,
+                  status as "status", attempts, last_error, issued_at, updated_at,
+                  vc_id, vc_json, status_list_id, status_list_index
         "#,
-        id
     )
+    .bind(id)
     .fetch_optional(pool)
     .await?;
     Ok(credential)
 }
 
 pub async fn revoke_credential(pool: &PgPool, id: Uuid) -> Result<Option<Credential>, CoreError> {
-    let credential = sqlx::query_as!(
-        Credential,
+    let credential = sqlx::query_as::<_, Credential>(
         r#"
         UPDATE credentials
         SET status = 'revoked',
             updated_at = now()
         WHERE id = $1
-        RETURNING id, participant_id, template_id, kind as "kind: TemplateKind", file_key,
-                  status as "status: CredentialStatus", attempts, last_error, issued_at, updated_at
+        RETURNING id, participant_id, template_id, kind as "kind", file_key,
+                  status as "status", attempts, last_error, issued_at, updated_at,
+                  vc_id, vc_json, status_list_id, status_list_index
         "#,
-        id
     )
+    .bind(id)
     .fetch_optional(pool)
     .await?;
     Ok(credential)
@@ -315,19 +352,20 @@ pub async fn get_recent_failures(
     event_id: Uuid,
     limit: i64,
 ) -> Result<Vec<Credential>, CoreError> {
-    let credentials = sqlx::query_as!(
-        Credential,
+    let credentials = sqlx::query_as::<_, Credential>(
         r#"
-        SELECT c.id, c.participant_id, c.template_id, c.kind as "kind: TemplateKind", c.file_key,
-               c.status as "status: CredentialStatus", c.attempts, c.last_error, c.issued_at, c.updated_at
+        SELECT c.id, c.participant_id, c.template_id, c.kind as "kind", c.file_key,
+               c.status as "status", c.attempts, c.last_error, c.issued_at, c.updated_at,
+               c.vc_id, c.vc_json, c.status_list_id, c.status_list_index
         FROM credentials c
         JOIN participants p ON c.participant_id = p.id
         WHERE p.event_id = $1 AND c.status = 'failed'
         ORDER BY c.updated_at DESC
         LIMIT $2
         "#,
-        event_id, limit
     )
+    .bind(event_id)
+    .bind(limit)
     .fetch_all(pool)
     .await?;
     Ok(credentials)
@@ -346,15 +384,16 @@ pub async fn get_credential_with_details(
     )>,
     CoreError,
 > {
-    let row = sqlx::query!(
+    let row = sqlx::query(
         r#"
         SELECT
-            c.id, c.participant_id, c.template_id, c.kind as "kind: TemplateKind", c.file_key,
-            c.status as "status: CredentialStatus", c.attempts, c.last_error, c.issued_at, c.updated_at,
+            c.id, c.participant_id, c.template_id, c.kind, c.file_key,
+            c.status, c.attempts, c.last_error, c.issued_at, c.updated_at,
+            c.vc_id, c.vc_json, c.status_list_id, c.status_list_index,
             p.id as p_id, p.event_id, p.participant_type_id, p.name as p_name, p.email, p.short_code, p.created_at as p_created_at,
             pt.id as pt_id, pt.event_id as pt_event_id, pt.name as pt_name, pt.badge_enabled, pt.certificate_enabled,
             e.id as e_id, e.owner_id, e.name as e_name, e.event_date, e.org_name, e.accent_color, e.created_at as e_created_at,
-            t.id as t_id, t.participant_type_id as t_pt_id, t.kind as "t_kind: TemplateKind", t.file_key as t_file_key, t.name_zone, t.qr_zone
+            t.id as t_id, t.participant_type_id as t_pt_id, t.kind, t.file_key as t_file_key, t.name_zone, t.qr_zone
         FROM credentials c
         JOIN participants p ON c.participant_id = p.id
         JOIN participant_types pt ON p.participant_type_id = pt.id
@@ -362,57 +401,61 @@ pub async fn get_credential_with_details(
         JOIN templates t ON c.template_id = t.id
         WHERE c.id = $1
         "#,
-        credential_id
     )
+    .bind(credential_id)
     .fetch_optional(pool)
     .await?;
 
     if let Some(row) = row {
         let credential = Credential {
-            id: row.id,
-            participant_id: row.participant_id,
-            template_id: row.template_id,
-            kind: row.kind,
-            file_key: row.file_key,
-            status: row.status,
-            attempts: row.attempts,
-            last_error: row.last_error,
-            issued_at: row.issued_at,
-            updated_at: row.updated_at,
+            id: row.get("id"),
+            participant_id: row.get("participant_id"),
+            template_id: row.get("template_id"),
+            kind: row.get::<TemplateKind, _>("kind"),
+            file_key: row.get("file_key"),
+            status: row.get::<CredentialStatus, _>("status"),
+            attempts: row.get("attempts"),
+            last_error: row.get("last_error"),
+            issued_at: row.get("issued_at"),
+            updated_at: row.get("updated_at"),
+            vc_id: row.get("vc_id"),
+            vc_json: row.get("vc_json"),
+            status_list_id: row.get("status_list_id"),
+            status_list_index: row.get("status_list_index"),
         };
         let participant = crate::models::Participant {
-            id: row.p_id,
-            event_id: row.event_id,
-            participant_type_id: row.participant_type_id,
-            name: row.p_name,
-            email: row.email,
-            short_code: row.short_code,
-            created_at: row.p_created_at,
+            id: row.get("p_id"),
+            event_id: row.get("event_id"),
+            participant_type_id: row.get("participant_type_id"),
+            name: row.get("p_name"),
+            email: row.get("email"),
+            short_code: row.get("short_code"),
+            created_at: row.get("p_created_at"),
         };
         let participant_type = crate::models::ParticipantType {
-            id: row.pt_id,
-            event_id: row.pt_event_id,
-            name: row.pt_name,
-            badge_enabled: row.badge_enabled,
-            certificate_enabled: row.certificate_enabled,
+            id: row.get("pt_id"),
+            event_id: row.get("pt_event_id"),
+            name: row.get("pt_name"),
+            badge_enabled: row.get("badge_enabled"),
+            certificate_enabled: row.get("certificate_enabled"),
         };
         let event = crate::models::Event {
-            id: row.e_id,
-            owner_id: row.owner_id,
+            id: row.get("e_id"),
+            owner_id: row.get("owner_id"),
             tenant_id: None, // v1.0: not needed by the worker; tenant scoping is enforced at the route layer.
-            name: row.e_name,
-            event_date: row.event_date,
-            org_name: row.org_name,
-            accent_color: row.accent_color,
-            created_at: row.e_created_at,
+            name: row.get("e_name"),
+            event_date: row.get("event_date"),
+            org_name: row.get("org_name"),
+            accent_color: row.get("accent_color"),
+            created_at: row.get("e_created_at"),
         };
         let template = Template {
-            id: row.t_id,
-            participant_type_id: row.t_pt_id,
-            kind: row.t_kind,
-            file_key: row.t_file_key,
-            name_zone: row.name_zone,
-            qr_zone: row.qr_zone,
+            id: row.get("t_id"),
+            participant_type_id: row.get("t_pt_id"),
+            kind: row.get::<TemplateKind, _>("t_kind"),
+            file_key: row.get("t_file_key"),
+            name_zone: row.get("name_zone"),
+            qr_zone: row.get("qr_zone"),
         };
         Ok(Some((
             credential,
@@ -439,15 +482,16 @@ pub async fn get_credential_by_short_code(
     )>,
     CoreError,
 > {
-    let row = sqlx::query!(
+    let row = sqlx::query(
         r#"
         SELECT
-            c.id, c.participant_id, c.template_id, c.kind as "kind: TemplateKind", c.file_key,
-            c.status as "status: CredentialStatus", c.attempts, c.last_error, c.issued_at, c.updated_at,
+            c.id, c.participant_id, c.template_id, c.kind, c.file_key,
+            c.status, c.attempts, c.last_error, c.issued_at, c.updated_at,
+            c.vc_id, c.vc_json, c.status_list_id, c.status_list_index,
             p.id as p_id, p.event_id, p.participant_type_id, p.name as p_name, p.email, p.short_code, p.created_at as p_created_at,
             pt.id as pt_id, pt.event_id as pt_event_id, pt.name as pt_name, pt.badge_enabled, pt.certificate_enabled,
             e.id as e_id, e.owner_id, e.name as e_name, e.event_date, e.org_name, e.accent_color, e.created_at as e_created_at,
-            t.id as t_id, t.participant_type_id as t_pt_id, t.kind as "t_kind: TemplateKind", t.file_key as t_file_key, t.name_zone, t.qr_zone
+            t.id as t_id, t.participant_type_id as t_pt_id, t.kind, t.file_key as t_file_key, t.name_zone, t.qr_zone
         FROM credentials c
         JOIN participants p ON c.participant_id = p.id
         JOIN participant_types pt ON p.participant_type_id = pt.id
@@ -455,57 +499,61 @@ pub async fn get_credential_by_short_code(
         JOIN templates t ON c.template_id = t.id
         WHERE p.short_code = $1
         "#,
-        short_code
     )
+    .bind(short_code)
     .fetch_optional(pool)
     .await?;
 
     if let Some(row) = row {
         let credential = Credential {
-            id: row.id,
-            participant_id: row.participant_id,
-            template_id: row.template_id,
-            kind: row.kind,
-            file_key: row.file_key,
-            status: row.status,
-            attempts: row.attempts,
-            last_error: row.last_error,
-            issued_at: row.issued_at,
-            updated_at: row.updated_at,
+            id: row.get("id"),
+            participant_id: row.get("participant_id"),
+            template_id: row.get("template_id"),
+            kind: row.get::<TemplateKind, _>("kind"),
+            file_key: row.get("file_key"),
+            status: row.get::<CredentialStatus, _>("status"),
+            attempts: row.get("attempts"),
+            last_error: row.get("last_error"),
+            issued_at: row.get("issued_at"),
+            updated_at: row.get("updated_at"),
+            vc_id: row.get("vc_id"),
+            vc_json: row.get("vc_json"),
+            status_list_id: row.get("status_list_id"),
+            status_list_index: row.get("status_list_index"),
         };
         let participant = crate::models::Participant {
-            id: row.p_id,
-            event_id: row.event_id,
-            participant_type_id: row.participant_type_id,
-            name: row.p_name,
-            email: row.email,
-            short_code: row.short_code,
-            created_at: row.p_created_at,
+            id: row.get("p_id"),
+            event_id: row.get("event_id"),
+            participant_type_id: row.get("participant_type_id"),
+            name: row.get("p_name"),
+            email: row.get("email"),
+            short_code: row.get("short_code"),
+            created_at: row.get("p_created_at"),
         };
         let participant_type = crate::models::ParticipantType {
-            id: row.pt_id,
-            event_id: row.pt_event_id,
-            name: row.pt_name,
-            badge_enabled: row.badge_enabled,
-            certificate_enabled: row.certificate_enabled,
+            id: row.get("pt_id"),
+            event_id: row.get("pt_event_id"),
+            name: row.get("pt_name"),
+            badge_enabled: row.get("badge_enabled"),
+            certificate_enabled: row.get("certificate_enabled"),
         };
         let event = crate::models::Event {
-            id: row.e_id,
-            owner_id: row.owner_id,
+            id: row.get("e_id"),
+            owner_id: row.get("owner_id"),
             tenant_id: None, // v1.0: not needed by the verify flow; tenant scoping is enforced at the route layer.
-            name: row.e_name,
-            event_date: row.event_date,
-            org_name: row.org_name,
-            accent_color: row.accent_color,
-            created_at: row.e_created_at,
+            name: row.get("e_name"),
+            event_date: row.get("event_date"),
+            org_name: row.get("org_name"),
+            accent_color: row.get("accent_color"),
+            created_at: row.get("e_created_at"),
         };
         let template = Template {
-            id: row.t_id,
-            participant_type_id: row.t_pt_id,
-            kind: row.t_kind,
-            file_key: row.t_file_key,
-            name_zone: row.name_zone,
-            qr_zone: row.qr_zone,
+            id: row.get("t_id"),
+            participant_type_id: row.get("t_pt_id"),
+            kind: row.get::<TemplateKind, _>("t_kind"),
+            file_key: row.get("t_file_key"),
+            name_zone: row.get("name_zone"),
+            qr_zone: row.get("qr_zone"),
         };
         Ok(Some((
             credential,

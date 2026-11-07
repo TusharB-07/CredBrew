@@ -94,9 +94,14 @@ async fn main() -> Result<(), CoreError> {
         )
         .route(
             "/api/public/og-image/{code}",
-            get(routes::public::og_image).layer(public_limiter),
+            get(routes::public::og_image).layer(public_limiter.clone()),
         )
         .route("/v/{code}", get(routes::public::verify_page))
+        // v1.0 Phase 3: download the raw Verifiable Credential (.vc.json)
+        .route(
+            "/api/public/vc/{code}",
+            get(routes::public::download_vc).layer(public_limiter),
+        )
         // v1.0 Phase 2: public DID document endpoint (serves did.json for did:web resolution)
         .route(
             "/tenants/{slug}/did.json",

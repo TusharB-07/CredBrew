@@ -1181,6 +1181,7 @@ dependencies = [
  "config",
  "credbrew-core",
  "dotenv",
+ "ed25519-dalek",
  "futures",
  "governor 0.6.3",
  "lettre",
