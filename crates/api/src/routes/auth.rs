@@ -1,24 +1,29 @@
-use std::ops::Deref;
-use std::sync::Arc;
+use crate::state::{AppConfig, AppState};
+use argon2::password_hash::{rand_core::OsRng, SaltString};
+use argon2::{Argon2, PasswordHasher, PasswordVerifier};
 use axum::{
-    extract::{State, Request, FromRequestParts},
+    extract::{FromRequestParts, Request, State},
+    http::request::Parts,
+    http::HeaderName,
     middleware::Next,
     response::Response,
-    http::request::Parts,
     Json,
 };
-use jsonwebtoken::{encode, decode, Header, Validation, EncodingKey, DecodingKey};
-use argon2::{PasswordHasher, PasswordVerifier, Argon2};
-use argon2::password_hash::{SaltString, rand_core::OsRng};
-use uuid::Uuid;
-use chrono::{Utc, Duration};
-use serde::Deserialize;
-use crate::state::{AppState, AppConfig};
+use chrono::{Duration, Utc};
 use credbrew_core::{
-    db::users,
-    models::{User, Claims, AuthResponse},
+    db::{tenants as tenant_db, users},
     error::CoreError,
+    models::{ActiveTenant, AuthResponse, Claims, User},
 };
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use serde::Deserialize;
+use std::ops::Deref;
+use std::sync::Arc;
+use uuid::Uuid;
+
+/// Header name clients use to select the active tenant for a request.
+/// If absent, the middleware falls back to the user's oldest membership.
+pub const TENANT_HEADER: HeaderName = HeaderName::from_static("x-tenant-id");
 
 #[derive(Deserialize)]
 pub struct RegisterRequest {
@@ -34,13 +39,32 @@ pub struct LoginRequest {
 }
 
 #[derive(Debug, Clone)]
-pub struct AuthUser(pub User);
+pub struct AuthUser {
+    pub user: User,
+    pub active_tenant: Option<ActiveTenant>,
+}
 
 impl Deref for AuthUser {
     type Target = User;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.user
+    }
+}
+
+impl AuthUser {
+    /// The active tenant for this request. Returns 403 if the user has no
+    /// tenant yet — callers should use this on routes that require a tenant
+    /// context (which is all protected routes in v1.0+).
+    pub fn require_tenant(&self) -> Result<&ActiveTenant, CoreError> {
+        self.active_tenant
+            .as_ref()
+            .ok_or_else(|| CoreError::Forbidden("user has no tenant membership".into()))
+    }
+
+    /// Convenience: the active tenant's id, or an error if none.
+    pub fn tenant_id(&self) -> Result<Uuid, CoreError> {
+        Ok(self.require_tenant()?.id())
     }
 }
 
@@ -51,28 +75,56 @@ where
     type Rejection = CoreError;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        parts
+        let user = parts
             .extensions
             .get::<User>()
             .cloned()
-            .map(AuthUser)
-            .ok_or_else(|| CoreError::Unauthorized("missing or invalid auth token".into()))
+            .ok_or_else(|| CoreError::Unauthorized("missing or invalid auth token".into()))?;
+        let active_tenant = parts.extensions.get::<ActiveTenant>().cloned();
+        Ok(AuthUser {
+            user,
+            active_tenant,
+        })
     }
 }
 
 pub async fn register(
     State(state): State<Arc<AppState>>,
-    Json(RegisterRequest { name, email, password }): Json<RegisterRequest>,
+    Json(RegisterRequest {
+        name,
+        email,
+        password,
+    }): Json<RegisterRequest>,
 ) -> Result<Json<AuthResponse>, CoreError> {
     if password.len() < 8 {
-        return Err(CoreError::TemplateValidation("password must be at least 8 characters".into()));
+        return Err(CoreError::TemplateValidation(
+            "password must be at least 8 characters".into(),
+        ));
     }
 
     let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();
-    let password_hash = argon2.hash_password(password.as_bytes(), &salt)?.to_string();
+    let password_hash = argon2
+        .hash_password(password.as_bytes(), &salt)?
+        .to_string();
 
     let user = users::create_user(&state.pool, &email, &password_hash, &name).await?;
+
+    // v1.0: every new user gets a personal tenant on signup, owned by them.
+    // This preserves the v0.1 single-user workflow while enabling multi-tenancy.
+    let tenant_name = if name.trim().is_empty() {
+        "My Workspace"
+    } else {
+        &name
+    };
+    let _tenant = tenant_db::create_tenant_with_owner(
+        &state.pool,
+        &format!("{tenant_name}'s Workspace"),
+        None,
+        "free",
+        user.id,
+    )
+    .await?;
 
     let token = create_token(&state.config, user.id)?;
 
@@ -86,7 +138,8 @@ pub async fn login(
     State(state): State<Arc<AppState>>,
     Json(LoginRequest { email, password }): Json<LoginRequest>,
 ) -> Result<Json<AuthResponse>, CoreError> {
-    let user = users::get_user_by_email(&state.pool, &email).await?
+    let user = users::get_user_by_email(&state.pool, &email)
+        .await?
         .ok_or_else(|| CoreError::Unauthorized("invalid credentials".into()))?;
 
     let parsed_hash = argon2::PasswordHash::new(&user.password_hash)
@@ -107,7 +160,11 @@ pub async fn login(
 pub fn create_token(config: &AppConfig, user_id: Uuid) -> Result<String, CoreError> {
     let exp = (Utc::now() + Duration::hours(config.jwt_expiry_hours)).timestamp() as usize;
     let claims = Claims { sub: user_id, exp };
-    let token = encode(&Header::default(), &claims, &EncodingKey::from_secret(config.jwt_secret.as_bytes()))?;
+    let token = encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(config.jwt_secret.as_bytes()),
+    )?;
     Ok(token)
 }
 
@@ -122,7 +179,8 @@ pub async fn auth_middleware(
         .and_then(|h| h.to_str().ok())
         .and_then(|h| h.strip_prefix("Bearer "));
 
-    let token = auth_header.ok_or_else(|| CoreError::Unauthorized("missing bearer token".into()))?;
+    let token =
+        auth_header.ok_or_else(|| CoreError::Unauthorized("missing bearer token".into()))?;
 
     let token_data = decode::<Claims>(
         token,
@@ -131,11 +189,27 @@ pub async fn auth_middleware(
     )
     .map_err(|_| CoreError::Unauthorized("invalid token".into()))?;
 
-    let user = users::get_user_by_id(&state.pool, token_data.claims.sub).await
+    let user = users::get_user_by_id(&state.pool, token_data.claims.sub)
+        .await
         .map_err(|_| CoreError::Internal("failed to load user".into()))?
         .ok_or_else(|| CoreError::Unauthorized("user no longer exists".into()))?;
 
+    // v1.0: resolve the active tenant from the X-Tenant-ID header (if present),
+    // otherwise default to the user's oldest membership. None means the user
+    // has no tenants yet (rare — register() creates one).
+    let header_tenant_id = request
+        .headers()
+        .get(&TENANT_HEADER)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| Uuid::parse_str(s).ok());
+
+    let active_tenant =
+        tenant_db::resolve_active_tenant(&state.pool, user.id, header_tenant_id).await?;
+
     request.extensions_mut().insert(user);
+    if let Some(t) = active_tenant {
+        request.extensions_mut().insert(t);
+    }
     Ok(next.run(request).await)
 }
 
