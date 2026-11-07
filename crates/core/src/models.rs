@@ -272,6 +272,11 @@ pub struct Credential {
     pub vc_json: Option<serde_json::Value>,
     pub status_list_id: Option<Uuid>,
     pub status_list_index: Option<i32>,
+    // v1.0 Phase 6: on-chain anchoring (nullable; only set if the tenant has
+    // anchoring enabled AND the credbrew-anchor process has confirmed the tx)
+    pub anchored_chain: Option<String>,
+    pub anchored_txid: Option<String>,
+    pub anchored_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]

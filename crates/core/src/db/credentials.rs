@@ -68,7 +68,7 @@ pub async fn get_credential(pool: &PgPool, id: Uuid) -> Result<Option<Credential
         r#"
         SELECT id, participant_id, template_id, kind as "kind", file_key,
                status as "status", attempts, last_error, issued_at, updated_at,
-               vc_id, vc_json, status_list_id, status_list_index
+               vc_id, vc_json, status_list_id, status_list_index, anchored_chain, anchored_txid, anchored_at
         FROM credentials
         WHERE id = $1
         "#,
@@ -89,7 +89,7 @@ pub async fn get_credentials_by_event(
         r#"
         SELECT c.id, c.participant_id, c.template_id, c.kind as "kind", c.file_key,
                c.status as "status", c.attempts, c.last_error, c.issued_at, c.updated_at,
-               c.vc_id, c.vc_json, c.status_list_id, c.status_list_index
+               c.vc_id, c.vc_json, c.status_list_id, c.status_list_index, c.anchored_chain, c.anchored_txid, c.anchored_at
         FROM credentials c
         JOIN participants p ON c.participant_id = p.id
         WHERE p.event_id = $1
@@ -129,7 +129,7 @@ pub async fn get_credential_by_participant_and_template(
         r#"
         SELECT id, participant_id, template_id, kind as "kind", file_key,
                status as "status", attempts, last_error, issued_at, updated_at,
-               vc_id, vc_json, status_list_id, status_list_index
+               vc_id, vc_json, status_list_id, status_list_index, anchored_chain, anchored_txid, anchored_at
         FROM credentials
         WHERE participant_id = $1 AND template_id = $2
         "#,
@@ -159,7 +159,7 @@ pub async fn update_credential_status(
         WHERE id = $1
         RETURNING id, participant_id, template_id, kind as "kind", file_key,
                   status as "status", attempts, last_error, issued_at, updated_at,
-                  vc_id, vc_json, status_list_id, status_list_index
+                  vc_id, vc_json, status_list_id, status_list_index, anchored_chain, anchored_txid, anchored_at
         "#,
     )
     .bind(id)
@@ -184,7 +184,7 @@ pub async fn reset_credential_to_pending(
         WHERE id = $1
         RETURNING id, participant_id, template_id, kind as "kind", file_key,
                   status as "status", attempts, last_error, issued_at, updated_at,
-                  vc_id, vc_json, status_list_id, status_list_index
+                  vc_id, vc_json, status_list_id, status_list_index, anchored_chain, anchored_txid, anchored_at
         "#,
     )
     .bind(id)
@@ -202,7 +202,7 @@ pub async fn revoke_credential(pool: &PgPool, id: Uuid) -> Result<Option<Credent
         WHERE id = $1
         RETURNING id, participant_id, template_id, kind as "kind", file_key,
                   status as "status", attempts, last_error, issued_at, updated_at,
-                  vc_id, vc_json, status_list_id, status_list_index
+                  vc_id, vc_json, status_list_id, status_list_index, anchored_chain, anchored_txid, anchored_at
         "#,
     )
     .bind(id)
@@ -356,7 +356,7 @@ pub async fn get_recent_failures(
         r#"
         SELECT c.id, c.participant_id, c.template_id, c.kind as "kind", c.file_key,
                c.status as "status", c.attempts, c.last_error, c.issued_at, c.updated_at,
-               c.vc_id, c.vc_json, c.status_list_id, c.status_list_index
+               c.vc_id, c.vc_json, c.status_list_id, c.status_list_index, c.anchored_chain, c.anchored_txid, c.anchored_at
         FROM credentials c
         JOIN participants p ON c.participant_id = p.id
         WHERE p.event_id = $1 AND c.status = 'failed'
@@ -389,7 +389,7 @@ pub async fn get_credential_with_details(
         SELECT
             c.id, c.participant_id, c.template_id, c.kind, c.file_key,
             c.status, c.attempts, c.last_error, c.issued_at, c.updated_at,
-            c.vc_id, c.vc_json, c.status_list_id, c.status_list_index,
+            c.vc_id, c.vc_json, c.status_list_id, c.status_list_index, c.anchored_chain, c.anchored_txid, c.anchored_at,
             p.id as p_id, p.event_id, p.participant_type_id, p.name as p_name, p.email, p.short_code, p.created_at as p_created_at,
             pt.id as pt_id, pt.event_id as pt_event_id, pt.name as pt_name, pt.badge_enabled, pt.certificate_enabled,
             e.id as e_id, e.owner_id, e.name as e_name, e.event_date, e.org_name, e.accent_color, e.created_at as e_created_at,
@@ -422,6 +422,9 @@ pub async fn get_credential_with_details(
             vc_json: row.get("vc_json"),
             status_list_id: row.get("status_list_id"),
             status_list_index: row.get("status_list_index"),
+            anchored_chain: row.get("anchored_chain"),
+            anchored_txid: row.get("anchored_txid"),
+            anchored_at: row.get("anchored_at"),
         };
         let participant = crate::models::Participant {
             id: row.get("p_id"),
@@ -487,7 +490,7 @@ pub async fn get_credential_by_short_code(
         SELECT
             c.id, c.participant_id, c.template_id, c.kind, c.file_key,
             c.status, c.attempts, c.last_error, c.issued_at, c.updated_at,
-            c.vc_id, c.vc_json, c.status_list_id, c.status_list_index,
+            c.vc_id, c.vc_json, c.status_list_id, c.status_list_index, c.anchored_chain, c.anchored_txid, c.anchored_at,
             p.id as p_id, p.event_id, p.participant_type_id, p.name as p_name, p.email, p.short_code, p.created_at as p_created_at,
             pt.id as pt_id, pt.event_id as pt_event_id, pt.name as pt_name, pt.badge_enabled, pt.certificate_enabled,
             e.id as e_id, e.owner_id, e.name as e_name, e.event_date, e.org_name, e.accent_color, e.created_at as e_created_at,
@@ -520,6 +523,9 @@ pub async fn get_credential_by_short_code(
             vc_json: row.get("vc_json"),
             status_list_id: row.get("status_list_id"),
             status_list_index: row.get("status_list_index"),
+            anchored_chain: row.get("anchored_chain"),
+            anchored_txid: row.get("anchored_txid"),
+            anchored_at: row.get("anchored_at"),
         };
         let participant = crate::models::Participant {
             id: row.get("p_id"),
