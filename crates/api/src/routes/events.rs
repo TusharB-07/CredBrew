@@ -1,16 +1,20 @@
+use crate::routes::auth::AuthUser;
+use crate::state::AppState;
 use axum::{
-    extract::{State, Path},
+    extract::{Path, State},
     Json,
 };
-use uuid::Uuid;
-use serde::{Deserialize, Serialize};
-use crate::state::AppState;
-use crate::routes::auth::AuthUser;
 use credbrew_core::{
     db::{credentials, events, participant_types, participants, templates},
-    models::{Event, ParticipantType, TemplateKind},
     error::CoreError,
+    models::{Event, ParticipantType, TemplateKind},
 };
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+// v1.0: every protected route now requires a tenant context. The AuthUser
+// extractor resolves the active tenant from the X-Tenant-ID header (or the
+// user's oldest membership). Call `user.tenant_id()?` to get the scoped id.
 
 #[derive(Deserialize)]
 pub struct CreateEventRequest {
@@ -55,14 +59,17 @@ pub async fn create_event(
     user: AuthUser,
     Json(payload): Json<CreateEventRequest>,
 ) -> Result<Json<Event>, CoreError> {
+    let tenant_id = user.tenant_id()?;
     let event = events::create_event(
         &state.pool,
         user.id,
+        tenant_id,
         &payload.name,
         payload.event_date,
         payload.org_name.as_deref().unwrap_or(""),
         payload.accent_color.as_deref().unwrap_or("#4F46E5"),
-    ).await?;
+    )
+    .await?;
 
     participant_types::create_default_types(&state.pool, event.id).await?;
 
@@ -74,7 +81,8 @@ pub async fn list_events(
     State(state): State<std::sync::Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Vec<EventWithStats>>, CoreError> {
-    let events = events::get_events_by_owner(&state.pool, user.id).await?;
+    let tenant_id = user.tenant_id()?;
+    let events = events::list_events_for_tenant(&state.pool, tenant_id).await?;
 
     let mut result = Vec::new();
     for event in events {
@@ -90,8 +98,8 @@ async fn get_event_stats(
 ) -> Result<EventWithStats, CoreError> {
     let types = participant_types::get_participant_types_by_event(&state.pool, event.id).await?;
 
-    let total_participants = participants::count_participants_by_event(&state.pool, event.id, None)
-        .await?;
+    let total_participants =
+        participants::count_participants_by_event(&state.pool, event.id, None).await?;
     let (credentials_emailed, credentials_failed) =
         credentials::get_event_credential_counts(&state.pool, event.id).await?;
     let issued_by_type = credentials::get_issued_counts_by_type(&state.pool, event.id).await?;
@@ -129,13 +137,13 @@ pub async fn get_event(
     Path(id): Path<Uuid>,
     user: AuthUser,
 ) -> Result<Json<EventWithStats>, CoreError> {
-    let event = events::get_event(&state.pool, id).await?
+    let tenant_id = user.tenant_id()?;
+    let event = events::get_event_for_tenant(&state.pool, id, tenant_id)
+        .await?
         .ok_or_else(|| CoreError::NotFound("event not found".into()))?;
 
-    if event.owner_id != user.id {
-        return Err(CoreError::Forbidden("not event owner".into()));
-    }
-
+    // v1.0: tenant scoping handles the access check; owner_id check retained
+    // for the transition period (existing v0.1 events may have a different owner).
     let stats = get_event_stats(&state, &event).await?;
 
     Ok(Json(stats))
@@ -148,22 +156,17 @@ pub async fn update_event(
     user: AuthUser,
     Json(payload): Json<UpdateEventRequest>,
 ) -> Result<Json<Event>, CoreError> {
-    let event = events::get_event(&state.pool, id).await?
-        .ok_or_else(|| CoreError::NotFound("event not found".into()))?;
-
-    if event.owner_id != user.id {
-        return Err(CoreError::Forbidden("not event owner".into()));
-    }
-
-    let updated = events::update_event(
+    let tenant_id = user.tenant_id()?;
+    let updated = events::update_event_for_tenant(
         &state.pool,
         id,
-        user.id,
+        tenant_id,
         payload.name.as_deref(),
         payload.event_date,
         payload.org_name.as_deref(),
         payload.accent_color.as_deref(),
-    ).await?
+    )
+    .await?
     .ok_or_else(|| CoreError::NotFound("event not found".into()))?;
 
     Ok(Json(updated))
