@@ -315,6 +315,3 @@ credbrew/
 - [ ] Revoke → 410 on verify page
 - [ ] `cargo clippy --workspace -- -D warnings` clean
 
-## License
-
-MIT
