@@ -168,9 +168,41 @@ impl Proof {
 /// - No whitespace
 /// - UTF-8 output
 ///
-/// This is NOT RFC 8785 (JSON Canonicalization Scheme) and NOT URDNA2015,
-/// but it is deterministic and sufficient for our internal sign+verify
-/// loop. See module docs for the upgrade path.
+/// # Canonicalization note (important for interop)
+///
+/// This is NOT URDNA2015 (the RDF Dataset Canonicalization algorithm that
+/// the W3C VC Data Integrity spec mandates for Ed25519Signature2020).
+/// It is a simpler deterministic JSON serialization that CredBrew uses
+/// for its internal sign+verify loop.
+///
+/// **What works:** CredBrew-issued VCs verified by CredBrew's server
+/// (crates/core/src/did.rs::verify_document) and CredBrew's client-side
+/// verifier (crates/api/templates/verify.html). Both use this exact
+/// canonicalization, so the signatures verify correctly.
+///
+/// **What may NOT work:** Third-party wallets/verifiers (Badgr, Spruce,
+/// the 1EdTech reference verifier) that perform strict URDNA2015
+/// canonicalization may fail to verify CredBrew-issued VCs, because
+/// they will canonicalize differently and thus hash differently.
+///
+/// # Upgrade path to URDNA2015
+///
+/// To achieve full third-party wallet interop:
+/// 1. Add `rdf-canon = "0.15"` and `json-ld = "0.21"` to Cargo.toml
+/// 2. Replace this function with:
+///    a. JSON-LD expansion (using json-ld::expansion with a RemoteDocumentLoader)
+///    b. RDF dataset extraction (expanded JSON-LD → n-quads)
+///    c. URDNA2015 canonicalization (using rdf-canon::canonicalize)
+///    d. SHA-256 the canonical n-quads
+/// 3. Update the client-side verifier (verify.html) to use the same
+///    URDNA2015 pipeline (via the `jsonld` + `rdf-canonize` JS packages)
+/// 4. Re-issue all existing credentials (the signature will change)
+///
+/// Both `rdf-canon` and `json-ld` crates compile successfully and are
+/// available on crates.io. The upgrade is architecturally clean — only
+/// this function and its client-side mirror need to change. The proof
+/// format (Ed25519Signature2020), the key encoding (multibase), and the
+/// DID document shape are already spec-compliant.
 fn canonicalize(value: &Value) -> Result<Vec<u8>, CoreError> {
     canonicalize_value(value)
 }
