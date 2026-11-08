@@ -120,5 +120,149 @@
             <div class="footer">Powered by CredBrew · W3C Verifiable Credentials + Open Badges 3.0</div>
         </div>
     </div>
+
+    <script type="module">
+        // ─────────────────────────────────────────────────────────────────────
+        // Client-side cryptographic verification of the Ed25519Signature2020
+        // proof. This fetches the VC + DID document, extracts the public key,
+        // and verifies the signature in the browser — independent of CredBrew's
+        // server. The "Cryptographically Verified" badge is only shown if this
+        // check passes.
+        // ─────────────────────────────────────────────────────────────────────
+
+        const VC_URL = "{{ vc_download_url }}";
+        const BASE_URL = "{{ public_base_url }}";
+        const badge = document.querySelector(".verified-badge");
+
+        // Canonicalize JSON: sorted keys, no whitespace, proper string escaping.
+        // Must match the server's canonicalize() in crates/core/src/did.rs exactly.
+        function canonicalize(value) {
+            if (value === null) return "null";
+            if (typeof value === "boolean") return value ? "true" : "false";
+            if (typeof value === "number") return String(value);
+            if (typeof value === "string") return canonicalizeString(value);
+            if (Array.isArray(value)) {
+                return "[" + value.map(canonicalize).join(",") + "]";
+            }
+            if (typeof value === "object") {
+                const keys = Object.keys(value).sort();
+                const parts = keys.map(k => canonicalizeString(k) + ":" + canonicalize(value[k]));
+                return "{" + parts.join(",") + "}";
+            }
+            return "null";
+        }
+
+        function canonicalizeString(s) {
+            let out = '"';
+            for (const ch of s) {
+                const code = ch.codePointAt(0);
+                if (ch === '"') out += '\\"';
+                else if (ch === '\\') out += '\\\\';
+                else if (ch === '\n') out += '\\n';
+                else if (ch === '\r') out += '\\r';
+                else if (ch === '\t') out += '\\t';
+                else if (code < 0x20) out += '\\u' + code.toString(16).padStart(4, '0');
+                else out += ch;
+            }
+            return out + '"';
+        }
+
+        // Decode a multibase-encoded public key (z-prefix = base58btc).
+        async function decodeMultibasePublicKey(multibaseStr) {
+            // The 'z' prefix means base58btc. Use the bs58 library from CDN.
+            const bs58 = (await import("https://esm.sh/bs58@6.0.0")).default;
+            const decoded = bs58.decode(multibaseStr.slice(1)); // remove 'z' prefix
+            return decoded; // Uint8Array(32)
+        }
+
+        // SHA-256 hash using Web Crypto API.
+        async function sha256(data) {
+            const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+            return new Uint8Array(hashBuffer);
+        }
+
+        // Text encoder for UTF-8.
+        const encoder = new TextEncoder();
+
+        async function verifyCredential() {
+            try {
+                // 1. Fetch the VC.
+                const vcResp = await fetch(VC_URL);
+                if (!vcResp.ok) throw new Error("Failed to fetch VC: " + vcResp.status);
+                const vc = await vcResp.json();
+
+                // 2. Extract the issuer DID and proof.
+                const issuerDid = vc.issuer?.id;
+                const proof = vc.proof;
+                if (!issuerDid || !proof || !proof.proofValue) {
+                    throw new Error("VC missing issuer DID or proof");
+                }
+
+                // 3. Resolve the DID: did:web:credbrew.example:tenants:techconf
+                //    → fetch https://credbrew.example/tenants/techconf/did.json
+                const didParts = issuerDid.split(":");
+                if (didParts[0] !== "did" || didParts[1] !== "web") {
+                    throw new Error("Only did:web is supported, got: " + issuerDid);
+                }
+                const domain = didParts[2];
+                const pathSegments = didParts.slice(3);
+                let didDocUrl;
+                if (pathSegments.length === 0) {
+                    didDocUrl = `https://${domain}/.well-known/did.json`;
+                } else {
+                    didDocUrl = `https://${domain}/${pathSegments.join("/")}/did.json`;
+                }
+
+                const didResp = await fetch(didDocUrl);
+                if (!didResp.ok) throw new Error("Failed to fetch DID document: " + didResp.status);
+                const didDoc = await didResp.json();
+
+                // 4. Extract the public key from the DID document.
+                const vm = didDoc.verificationMethod?.[0];
+                if (!vm || !vm.publicKeyMultibase) {
+                    throw new Error("DID document missing publicKeyMultibase");
+                }
+                const publicKey = await decodeMultibasePublicKey(vm.publicKeyMultibase);
+
+                // 5. Canonicalize the VC with the proof block (minus proofValue).
+                const proofForSigning = {
+                    type: proof.type,
+                    created: proof.created,
+                    verificationMethod: proof.verificationMethod,
+                    proofPurpose: proof.proofPurpose,
+                };
+                const vcForSigning = { ...vc, proof: proofForSigning };
+                const canonical = canonicalize(vcForSigning);
+
+                // 6. SHA-256 hash.
+                const hash = await sha256(encoder.encode(canonical));
+
+                // 7. Decode the proofValue (multibase base58btc).
+                const bs58 = (await import("https://esm.sh/bs58@6.0.0")).default;
+                const signature = bs58.decode(proof.proofValue.slice(1)); // remove 'z' prefix
+
+                // 8. Verify the Ed25519 signature using @noble/ed25519.
+                const { verifyAsync } = await import("https://esm.sh/@noble/ed25519@2.0.0");
+                const isValid = await verifyAsync(signature, hash, publicKey);
+
+                if (isValid) {
+                    badge.style.background = "rgba(16, 185, 129, 0.3)";
+                    badge.innerHTML = '✓ Cryptographically Verified';
+                    console.log("[CredBrew] Signature verification PASSED — the credential is authentic.");
+                } else {
+                    badge.style.background = "rgba(239, 68, 68, 0.3)";
+                    badge.innerHTML = '✗ Signature Verification Failed';
+                    console.error("[CredBrew] Signature verification FAILED — the credential may be tampered.");
+                }
+            } catch (err) {
+                console.error("[CredBrew] Verification error:", err);
+                badge.style.background = "rgba(245, 158, 11, 0.3)";
+                badge.innerHTML = '⚠ Verification Unavailable';
+                badge.title = err.message;
+            }
+        }
+
+        verifyCredential();
+    </script>
 </body>
 </html>

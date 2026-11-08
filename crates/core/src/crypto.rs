@@ -53,7 +53,8 @@ impl LocalFileKeyStore {
         Ok(Self { key })
     }
 
-    #[cfg(test)]
+    /// Construct from a passphrase. Also available outside `cfg(test)` so
+    /// integration tests (which are a separate crate) can use it.
     pub fn from_passphrase(passphrase: &str) -> Self {
         let mut hasher = Sha256::new();
         hasher.update(passphrase.as_bytes());
