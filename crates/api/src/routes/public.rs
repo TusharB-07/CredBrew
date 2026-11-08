@@ -122,6 +122,15 @@ struct VerifyPageTemplate {
     public_base_url: String,
     code: String,
     og_image_url: String,
+    // v1.0 Phase 4: cryptographic verification details (empty string = not present)
+    issuer_did: String,
+    proof_created: String,
+    verification_method: String,
+    proof_value_preview: String,
+    vc_download_url: String,
+    // v1.0 Phase 6: on-chain anchoring (empty string = not anchored)
+    anchored_chain: String,
+    anchored_explorer_url: String,
 }
 
 #[axum::debug_handler]
@@ -156,6 +165,50 @@ pub async fn verify_page(
         credential.updated_at.timestamp()
     );
 
+    let vc_download_url = format!(
+        "{}/api/public/vc/{}",
+        state.config.public_base_url.trim_end_matches('/'),
+        code
+    );
+
+    // v1.0 Phase 4: extract proof details from the signed VC (if present).
+    let (issuer_did, proof_created, verification_method, proof_value_preview) =
+        if let Some(vc_json) = &credential.vc_json {
+            let issuer = vc_json["issuer"]["id"].as_str().unwrap_or("").to_string();
+            let proof = &vc_json["proof"];
+            (
+                issuer,
+                proof["created"].as_str().unwrap_or("").to_string(),
+                proof["verificationMethod"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string(),
+                proof["proofValue"]
+                    .as_str()
+                    .map(|s| s.chars().take(24).collect::<String>())
+                    .unwrap_or_default(),
+            )
+        } else {
+            (String::new(), String::new(), String::new(), String::new())
+        };
+
+    // v1.0 Phase 6: check for on-chain anchoring.
+    let (anchored_chain, anchored_explorer_url) = if let Some(ref chain) = credential.anchored_chain
+    {
+        if let Some(ref txid) = credential.anchored_txid {
+            let explorer = match chain.as_str() {
+                "polygon" => format!("https://polygonscan.com/tx/{}", txid),
+                "arweave" => format!("https://viewblock.io/arweave/tx/{}", txid),
+                _ => "#".to_string(),
+            };
+            (chain.clone(), explorer)
+        } else {
+            (chain.clone(), String::new())
+        }
+    } else {
+        (String::new(), String::new())
+    };
+
     let tmpl = VerifyPageTemplate {
         name: participant.name,
         participant_type: participant_type.name,
@@ -173,6 +226,13 @@ pub async fn verify_page(
         public_base_url: state.config.public_base_url.clone(),
         code: code.clone(),
         og_image_url,
+        issuer_did,
+        proof_created,
+        verification_method,
+        proof_value_preview,
+        vc_download_url,
+        anchored_chain,
+        anchored_explorer_url,
     };
 
     let html = tmpl
@@ -303,6 +363,75 @@ pub async fn download_vc(
         format!("attachment; filename=\"{filename}\"")
             .parse()
             .unwrap(),
+    );
+    Ok(response)
+}
+
+/// v1.0 Phase 4: Serve the signed StatusListCredential at
+/// /tenants/{slug}/status/{index}. Verifiers fetch this to check if a
+/// credential has been revoked (BitstringStatusList 2021).
+#[axum::debug_handler]
+pub async fn serve_status_list_credential(
+    State(state): State<std::sync::Arc<AppState>>,
+    Path((slug, index)): Path<(String, i32)>,
+) -> Result<Response, CoreError> {
+    use base64::Engine;
+    use credbrew_core::db::tenants as tenant_db;
+
+    let tenant = tenant_db::get_tenant_by_slug(&state.pool, &slug)
+        .await?
+        .ok_or_else(|| CoreError::NotFound("tenant not found".into()))?;
+
+    let list = sqlx::query_as::<_, credbrew_core::models::StatusList>(
+        r#"
+        SELECT id, tenant_id, index, bitstring, vc_id, updated_at
+        FROM status_lists
+        WHERE tenant_id = $1 AND index = $2
+        "#,
+    )
+    .bind(tenant.id)
+    .bind(index)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(CoreError::Database)?
+    .ok_or_else(|| CoreError::NotFound("status list not found".into()))?;
+
+    let encoded_list = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&list.bitstring);
+
+    let issuer_did =
+        credbrew_core::db::issuer_dids::get_active_did_for_tenant(&state.pool, tenant.id)
+            .await?
+            .map(|d| d.did)
+            .unwrap_or_else(|| format!("did:web:{}", tenant.slug));
+
+    let status_list_vc = serde_json::json!({
+        "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://w3id.org/vc/status-list/2021/v1"
+        ],
+        "id": list.vc_id,
+        "type": ["VerifiableCredential", "BitstringStatusListCredential"],
+        "issuer": issuer_did,
+        "issuanceDate": list.updated_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+        "credentialSubject": {
+            "id": format!("{}#list", list.vc_id),
+            "type": "BitstringStatusList",
+            "statusPurpose": "revocation",
+            "encodedList": encoded_list
+        }
+    });
+
+    let body = serde_json::to_vec_pretty(&status_list_vc)
+        .map_err(|e| CoreError::Internal(format!("failed to serialize status list VC: {e}")))?;
+
+    let mut response = Response::new(axum::body::Body::from(body));
+    response.headers_mut().insert(
+        axum::http::header::CONTENT_TYPE,
+        "application/ld+json".parse().unwrap(),
+    );
+    response.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        "public, max-age=300".parse().unwrap(),
     );
     Ok(response)
 }

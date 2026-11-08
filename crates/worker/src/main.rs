@@ -254,6 +254,20 @@ async fn process_job(
             "Signed and persisted Verifiable Credential"
         );
         let _ = proof; // proof is embedded in signed_vc; kept for clarity
+
+        // v1.0 Phase 6: if the tenant has on-chain anchoring enabled,
+        // enqueue an anchor job. The credbrew-anchor binary drains the
+        // queue and submits batched txs to Polygon.
+        if tenant.anchoring_enabled {
+            let credential_hash = compute_credential_hash(&signed_vc);
+            if let Err(e) =
+                db::anchor_jobs::enqueue(&pool, credential.id, "polygon", &credential_hash).await
+            {
+                tracing::warn!(credential_id = %credential.id, error = %e, "failed to enqueue anchor job");
+            } else {
+                info!(credential_id = %credential.id, "Enqueued anchor job for Polygon");
+            }
+        }
     } else {
         tracing::warn!(
             tenant_id = %tenant_id,
@@ -352,4 +366,14 @@ async fn next_status_list_index(
             .await
             .map_err(CoreError::Database)?;
     Ok(count as u32 + 1)
+}
+
+/// Compute the SHA-256 hash of the canonicalized signed VC. This is what
+/// gets anchored on-chain. Hex-encoded for compact storage.
+fn compute_credential_hash(signed_vc: &serde_json::Value) -> String {
+    use sha2::{Digest, Sha256};
+    let canonical = serde_json::to_string(signed_vc).unwrap_or_default();
+    let mut hasher = Sha256::new();
+    hasher.update(canonical.as_bytes());
+    hex::encode(hasher.finalize())
 }

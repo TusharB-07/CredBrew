@@ -6,4 +6,5 @@ pub mod issue;
 pub mod participant_types;
 pub mod participants;
 pub mod public;
+pub mod recipient;
 pub mod templates;

@@ -32,6 +32,8 @@ aws-config = { workspace = true }
 aws-sdk-s3 = { workspace = true }
 regex = { workspace = true }
 dotenv = "0.15"
+# v1.0 Phases 4/5/6
+base64 = { workspace = true }
 
 [dev-dependencies]
 sqlx = { workspace = true, features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "macros"] }

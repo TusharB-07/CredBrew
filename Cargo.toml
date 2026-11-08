@@ -57,6 +57,11 @@ sha2 = "0.10"
 hex = "0.4"
 serde_json_with_preserve_order = { package = "serde_json", version = "1.0", features = ["preserve_order"] }
 
+# v1.0 Phases 4/5/6 — magic-link auth, anchoring
+base64 = "0.22"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+async-trait = "0.1"
+
 [profile.release]
 lto = true
 codegen-units = 1

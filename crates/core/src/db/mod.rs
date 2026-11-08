@@ -1,6 +1,8 @@
+pub mod anchor_jobs;
 pub mod credentials;
 pub mod events;
 pub mod issuer_dids;
+pub mod magic_links;
 pub mod participant_types;
 pub mod participants;
 pub mod scan_events;

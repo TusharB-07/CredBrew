@@ -47,6 +47,11 @@ bs58 = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 
+# v1.0 Phases 4/5/6
+base64 = { workspace = true }
+async-trait = { workspace = true }
+reqwest = { workspace = true }
+
 [dev-dependencies]
 sqlx = { workspace = true, features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "macros"] }
 tokio-test = { workspace = true }
